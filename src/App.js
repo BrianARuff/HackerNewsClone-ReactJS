@@ -1,5 +1,6 @@
 import React, { Component } from "react";
-import axios from 'axios';
+import axios from "axios";
+import { sortby } from "lodash";
 import "./App.css";
 
 const DEFAULT_QUERY = "redux";
@@ -10,6 +11,14 @@ const PATH_SEARCH = "/search";
 const PARAM_SEARCH = "query=";
 const PARAM_PAGE = "page=";
 const PARAM_HPP = "hitsPerPage=";
+
+const SORTS = {
+  NONE: list => list,
+  TITLE: list => sortby(list, "title"),
+  AUTHOR: list => sortby(list, "author"),
+  COMMENTS: list => sortby(list, "num_comments").reverse(),
+  POINTS: list => sortby(list, "points").reverse()
+};
 
 //style objects
 const largeColumn = {
@@ -24,8 +33,16 @@ const smallColumn = {
   width: "10%"
 };
 
+const Loading = () => <div>Loading... </div>;
+
 const Button = ({ onClick, className = "", children }) => (
-  <button onClick={onClick} className={className}>
+  <button
+    onClick={onClick}
+    className={className}
+    ref={node => {
+      this.input = node;
+    }}
+  >
     {children}
   </button>
 );
@@ -37,9 +54,9 @@ const Search = ({ value, onChange, onSubmit, children }) => (
   </form>
 );
 
-const Table = ({ list, onDismiss }) => (
+const Table = ({ list, sortKey, onSort, onDismiss }) => (
   <div className="table">
-    {list.map(item => (
+    {SORTS[sortKey](list).map(item => (
       <div key={item.objectID} className="table-row">
         <span style={largeColumn}>
           <a href={item.url}>{item.title}</a>
@@ -73,10 +90,13 @@ class App extends Component {
       results: null,
       searchKey: "",
       searchTerm: DEFAULT_QUERY,
-      error: null
+      error: null,
+      isLoading: false,
+      sortKey: "NONE"
     };
 
     //function bindings
+    this.onSort = this.onSort.bind(this);
     this.needsToSearchTopStories = this.needsToSearchTopStories.bind(this);
     this.fetchSearchTopStories = this.fetchSearchTopStories.bind(this);
     this.onSearchSubmit = this.onSearchSubmit.bind(this);
@@ -85,14 +105,19 @@ class App extends Component {
     this.onSearchChange = this.onSearchChange.bind(this);
   }
 
+  onSort(sortKey) {
+    this.setState({ sortKey });
+  }
+
   needsToSearchTopStories(searchTerm) {
     return !this.state.results[searchTerm];
   }
 
   fetchSearchTopStories(searchTerm, page = 0) {
+    this.setState({ isLoading: true });
     axios(
       `${PATH_BASE}${PATH_SEARCH}?${PARAM_SEARCH}${searchTerm}&${PARAM_PAGE}${page}&${PARAM_HPP}${DEFAULT_HPP}`
-    ) 
+    )
       .then(result => this._isMounted && this.setSearchTopStories(result.data))
       .catch(error => this._isMounted && this.setState({ error }));
   }
@@ -109,18 +134,19 @@ class App extends Component {
   }
 
   setSearchTopStories(result) {
-    // this.setState({ result });
     const { hits, page } = result;
     const { searchKey, results } = this.state;
 
     const oldHits =
       results && results[searchKey] ? results[searchKey].hits : [];
     const updatedHits = [...oldHits, ...hits];
+
     this.setState({
       results: {
         ...results,
         [searchKey]: { hits: updatedHits, page }
-      }
+      },
+      isLoading: false
     });
   }
 
@@ -148,6 +174,9 @@ class App extends Component {
     const { searchTerm } = this.state;
     this.setState({ searchKey: searchTerm });
     this.fetchSearchTopStories(searchTerm);
+    if (this.input) {
+      this.input.focus();
+    }
   }
 
   componentWillUnmount() {
@@ -155,7 +184,14 @@ class App extends Component {
   }
 
   render() {
-    const { searchTerm, results, searchKey, error } = this.state;
+    const {
+      searchTerm,
+      results,
+      searchKey,
+      error,
+      isLoading,
+      sortKey
+    } = this.state;
     const page =
       (results && results[searchKey] && results[searchKey].page) || 0;
     const list =
@@ -181,15 +217,25 @@ class App extends Component {
               <p>Something went wrong.</p> }
             </div>
           ) : (
-            <Table list={list} onDismiss={this.onDismiss} />
+            <Table
+              list={list}
+              sortKey={sortKey}
+              onSort={this.onSort}
+              onDismiss={this.onDismiss}
+            />
           )}
         </div>
         <div className="interactions">
-          <Button
-            onClick={() => this.fetchSearchTopStories(searchKey, page + 1)}
-          >
-            More
-          </Button>
+          {isLoading ? (
+            <Loading />
+          ) : (
+            <Button
+              onClick={() => this.fetchSearchTopStories(searchKey, page + 1)}
+            >
+              {" "}
+              More{" "}
+            </Button>
+          )}
         </div>
       </div>
     );
@@ -197,3 +243,5 @@ class App extends Component {
 }
 
 export default App;
+
+export { Button, Search, Table };
